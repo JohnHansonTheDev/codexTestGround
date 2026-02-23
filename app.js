@@ -1,257 +1,291 @@
-import React, { useEffect, useMemo, useRef, useState } from 'https://esm.sh/react@18.2.0';
+import React, { useEffect, useMemo, useState } from 'https://esm.sh/react@18.2.0';
 import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-import * as THREE from 'https://esm.sh/three@0.160.0';
-import { animate, stagger } from 'https://cdn.jsdelivr.net/npm/motion@11.11.13/+esm';
 
-const AGENT_NAME = 'NOVA';
+const MAP_WIDTH = 12;
+const MAP_HEIGHT = 10;
 
-const cannedResponses = [
+const STARTERS = [
   {
-    test: /(who|what).*you|name/i,
-    answer: `I'm ${AGENT_NAME}, your launch agent. I blend visual storytelling, voice guidance, and instant help right here in the intro.`,
+    key: 'sproutle',
+    name: 'Sproutle',
+    type: 'Leaf',
+    maxHp: 36,
+    moves: [
+      { name: 'Vine Tap', min: 6, max: 10 },
+      { name: 'Seed Burst', min: 5, max: 12 },
+    ],
   },
   {
-    test: /(react|three|motion|stack|tech)/i,
-    answer:
-      'This experience runs on React for UI orchestration, Three.js for cinematic 3D graphics, and motion.dev for high-impact animations.',
+    key: 'embercub',
+    name: 'Embercub',
+    type: 'Flame',
+    maxHp: 34,
+    moves: [
+      { name: 'Cinder Paw', min: 7, max: 11 },
+      { name: 'Heat Bite', min: 6, max: 13 },
+    ],
   },
   {
-    test: /(help|support|agent|ask)/i,
-    answer:
-      'You can ask me anything about this demo, how it works, or what to build next. Try: “Give me a product idea” or “How do I deploy this?”',
-  },
-  {
-    test: /(gemini|design|compare)/i,
-    answer:
-      'Let\'s just say this intro was designed to feel bold, futuristic, and unforgettable — a high-energy creative statement.',
+    key: 'bubblit',
+    name: 'Bubblit',
+    type: 'Wave',
+    maxHp: 38,
+    moves: [
+      { name: 'Bubble Pop', min: 5, max: 10 },
+      { name: 'Tide Whip', min: 6, max: 11 },
+    ],
   },
 ];
 
-function resolveAgentReply(input) {
-  const hit = cannedResponses.find((entry) => entry.test.test(input));
-  if (hit) return hit.answer;
+const WILD_POOL = [
+  { name: 'Zapkit', type: 'Spark', maxHp: 24 },
+  { name: 'Mossnip', type: 'Leaf', maxHp: 22 },
+  { name: 'Pebblin', type: 'Stone', maxHp: 26 },
+  { name: 'Mistbat', type: 'Wind', maxHp: 20 },
+];
 
-  const ideas = [
-    'Turn this into a landing page for your AI product with pricing, testimonials, and a live demo CTA.',
-    'Add voice commands so I can respond hands-free while the 3D scene reacts in real time.',
-    'Connect this chat box to a backend model endpoint and make me a fully autonomous support co-pilot.',
-  ];
+const TILE_TYPES = {
+  PLAIN: 'plain',
+  GRASS: 'grass',
+  WATER: 'water',
+  ROCK: 'rock',
+};
 
-  return `Great question. Here\'s a creative direction: ${ideas[Math.floor(Math.random() * ideas.length)]}`;
-}
+const mapRows = [
+  'RRRRRRRRRRRR',
+  'RPGGGGGGGGPR',
+  'RPGPPPPPGGPR',
+  'RPGPWWWPGGPR',
+  'RPGPWWWPPGPR',
+  'RPGPPPPPPGPR',
+  'RPGGGGPPPGPR',
+  'RPPPPPPPPGPR',
+  'RGGGGGGGGGPR',
+  'RRRRRRRRRRRR',
+];
 
-function App() {
-  const canvasRef = useRef(null);
-  const heroRef = useRef(null);
-  const panelRef = useRef(null);
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState(() => [
-    {
-      role: 'agent',
-      text: `Welcome to the future. I'm ${AGENT_NAME}, your creative support agent. Ask me anything.`,
-    },
-  ]);
+const tileForChar = (char) => {
+  if (char === 'G') return TILE_TYPES.GRASS;
+  if (char === 'W') return TILE_TYPES.WATER;
+  if (char === 'R') return TILE_TYPES.ROCK;
+  return TILE_TYPES.PLAIN;
+};
 
-  const lastAgentMessage = useMemo(
-    () => [...messages].reverse().find((m) => m.role === 'agent')?.text || '',
-    [messages],
+const createWorld = () =>
+  mapRows.map((row) =>
+    row.split('').map((char) => ({
+      type: tileForChar(char),
+      walkable: char !== 'R' && char !== 'W',
+    })),
   );
 
-  useEffect(() => {
-    const heroNodes = heroRef.current?.querySelectorAll('.reveal') ?? [];
-    if (heroNodes.length > 0) {
-      animate(
-        heroNodes,
-        { opacity: [0, 1], y: [36, 0], filter: ['blur(10px)', 'blur(0px)'] },
-        { delay: stagger(0.12), duration: 0.9, easing: 'ease-out' },
-      );
+const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+const createWildCreature = () => {
+  const base = WILD_POOL[randomInt(0, WILD_POOL.length - 1)];
+  return {
+    ...base,
+    hp: base.maxHp,
+  };
+};
+
+function App() {
+  const world = useMemo(() => createWorld(), []);
+  const [starter, setStarter] = useState(null);
+  const [playerPos, setPlayerPos] = useState({ x: 2, y: 2 });
+  const [log, setLog] = useState(['Welcome, trainer! Pick a starter to begin.']);
+  const [mode, setMode] = useState('intro');
+  const [enemy, setEnemy] = useState(null);
+  const [hp, setHp] = useState(0);
+
+  const pushLog = (line) => {
+    setLog((prev) => [...prev.slice(-3), line]);
+  };
+
+  const tryMove = (dx, dy) => {
+    if (!starter || mode === 'battle') return;
+    const next = { x: playerPos.x + dx, y: playerPos.y + dy };
+    if (next.x < 0 || next.x >= MAP_WIDTH || next.y < 0 || next.y >= MAP_HEIGHT) return;
+
+    const tile = world[next.y][next.x];
+    if (!tile.walkable) {
+      pushLog('A tough obstacle blocks the way.');
+      return;
     }
 
-    if (panelRef.current) {
-      animate(panelRef.current, { opacity: [0, 1], x: [30, 0] }, { duration: 0.9, delay: 0.45 });
+    setPlayerPos(next);
+
+    if (tile.type === TILE_TYPES.GRASS && Math.random() < 0.3) {
+      const wild = createWildCreature();
+      setEnemy(wild);
+      setMode('battle');
+      pushLog(`A wild ${wild.name} appeared!`);
     }
-  }, []);
-
-  useEffect(() => {
-    if (!canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2('#06070b', 0.055);
-
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 0, 7);
-
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-
-    const ambient = new THREE.AmbientLight('#8ab4ff', 0.75);
-    const key = new THREE.PointLight('#9f7bff', 2.2, 100);
-    key.position.set(3, 2, 5);
-    const fill = new THREE.PointLight('#24d6b5', 1.8, 100);
-    fill.position.set(-4, -1, 4);
-    scene.add(ambient, key, fill);
-
-    const coreGeometry = new THREE.IcosahedronGeometry(1.35, 2);
-    const coreMaterial = new THREE.MeshPhysicalMaterial({
-      color: '#85a7ff',
-      metalness: 0.25,
-      roughness: 0.1,
-      transmission: 0.25,
-      clearcoat: 0.5,
-      emissive: '#3452ff',
-      emissiveIntensity: 0.35,
-    });
-    const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
-    scene.add(coreMesh);
-
-    const ringGroup = new THREE.Group();
-    for (let i = 0; i < 3; i += 1) {
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(2 + i * 0.45, 0.03 + i * 0.01, 16, 180),
-        new THREE.MeshStandardMaterial({
-          color: ['#c8d6ff', '#8be8ff', '#80ffd8'][i],
-          emissive: ['#5b79ff', '#2ab8ff', '#20cd9a'][i],
-          emissiveIntensity: 0.65,
-          metalness: 0.6,
-          roughness: 0.25,
-        }),
-      );
-      ring.rotation.set(Math.random(), Math.random(), Math.random());
-      ringGroup.add(ring);
-    }
-    scene.add(ringGroup);
-
-    const starsGeo = new THREE.BufferGeometry();
-    const starCount = 1800;
-    const positionArray = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount * 3; i += 3) {
-      positionArray[i] = (Math.random() - 0.5) * 80;
-      positionArray[i + 1] = (Math.random() - 0.5) * 80;
-      positionArray[i + 2] = (Math.random() - 0.5) * 80;
-    }
-    starsGeo.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
-    const stars = new THREE.Points(
-      starsGeo,
-      new THREE.PointsMaterial({ color: '#9ab7ff', size: 0.04, transparent: true, opacity: 0.8 }),
-    );
-    scene.add(stars);
-
-    let rafId;
-    const clock = new THREE.Clock();
-
-    const animateScene = () => {
-      const t = clock.getElapsedTime();
-      coreMesh.rotation.x = t * 0.35;
-      coreMesh.rotation.y = t * 0.5;
-      coreMesh.position.y = Math.sin(t * 1.2) * 0.2;
-
-      ringGroup.rotation.x = t * 0.18;
-      ringGroup.rotation.y = -t * 0.24;
-      ringGroup.rotation.z = Math.sin(t * 0.8) * 0.25;
-
-      stars.rotation.y = t * 0.018;
-      stars.rotation.x = Math.sin(t * 0.1) * 0.08;
-
-      renderer.render(scene, camera);
-      rafId = requestAnimationFrame(animateScene);
-    };
-
-    const onResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-
-    window.addEventListener('resize', onResize);
-    animateScene();
-
-    return () => {
-      window.removeEventListener('resize', onResize);
-      cancelAnimationFrame(rafId);
-      renderer.dispose();
-      coreGeometry.dispose();
-      coreMaterial.dispose();
-      starsGeo.dispose();
-    };
-  }, []);
+  };
 
   useEffect(() => {
-    if (!lastAgentMessage || !('speechSynthesis' in window)) return;
+    const onKeyDown = (event) => {
+      const map = {
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+      };
+      const next = map[event.key];
+      if (!next) return;
+      event.preventDefault();
+      tryMove(next[0], next[1]);
+    };
 
-    const utterance = new SpeechSynthesisUtterance(lastAgentMessage);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.volume = 0.95;
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find((v) => /en-US|Google US English|Samantha|Daniel/i.test(v.name));
-    if (preferred) utterance.voice = preferred;
+  const chooseStarter = (pick) => {
+    setStarter(pick);
+    setHp(pick.maxHp);
+    setMode('explore');
+    setLog([`You chose ${pick.name}!`, 'Walk in tall grass to find wild monsters.']);
+  };
 
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }, [lastAgentMessage]);
+  const attack = (move) => {
+    if (!enemy || !starter) return;
 
-  const onSubmit = (event) => {
-    event.preventDefault();
-    const value = input.trim();
-    if (!value) return;
+    const dealt = randomInt(move.min, move.max);
+    const nextEnemyHp = Math.max(0, enemy.hp - dealt);
+    pushLog(`${starter.name} used ${move.name} for ${dealt} damage!`);
 
-    const reply = resolveAgentReply(value);
-    setMessages((prev) => [...prev, { role: 'user', text: value }, { role: 'agent', text: reply }]);
-    setInput('');
+    if (nextEnemyHp <= 0) {
+      pushLog(`${enemy.name} fainted. You won the battle!`);
+      setEnemy(null);
+      setMode('explore');
+      return;
+    }
+
+    const rivalHit = randomInt(4, 10);
+    const nextPlayerHp = Math.max(0, hp - rivalHit);
+    pushLog(`${enemy.name} struck back for ${rivalHit}.`);
+
+    setEnemy({ ...enemy, hp: nextEnemyHp });
+    setHp(nextPlayerHp);
+
+    if (nextPlayerHp <= 0) {
+      setMode('gameover');
+      pushLog(`${starter.name} is out of energy... Game Over.`);
+    }
+  };
+
+  const restart = () => {
+    setStarter(null);
+    setPlayerPos({ x: 2, y: 2 });
+    setHp(0);
+    setEnemy(null);
+    setMode('intro');
+    setLog(['Welcome, trainer! Pick a starter to begin.']);
   };
 
   return React.createElement(
-    React.Fragment,
-    null,
-    React.createElement('canvas', { ref: canvasRef, className: 'bg-canvas', 'aria-hidden': 'true' }),
+    'div',
+    { className: 'page' },
+    React.createElement('h1', null, 'Pocket Pixel // Game Boy Clone'),
     React.createElement(
-      'main',
-      { className: 'app-shell' },
+      'div',
+      { className: 'gameboy' },
       React.createElement(
-        'section',
-        { className: 'hero', ref: heroRef },
-        React.createElement('p', { className: 'kicker reveal' }, 'AGENTIC IMMERSIVE INTRO'),
-        React.createElement('h1', { className: 'headline reveal' }, 'Hello World, Reimagined.'),
-        React.createElement(
-          'p',
-          { className: 'subheadline reveal' },
-          'An insane cinematic opening powered by React + Three.js + motion.dev, with a voice-enabled AI support agent built in.',
-        ),
-      ),
-      React.createElement(
-        'aside',
-        { className: 'agent-panel', ref: panelRef },
-        React.createElement('h2', null, `${AGENT_NAME} // Live Support Agent`),
+        'div',
+        { className: 'screen' },
         React.createElement(
           'div',
-          { className: 'messages' },
-          messages.map((message, index) =>
-            React.createElement(
-              'div',
-              { key: `${message.role}-${index}`, className: `message ${message.role}` },
-              message.text,
+          { className: 'statusbar' },
+          starter
+            ? `${starter.name} HP: ${hp}/${starter.maxHp}`
+            : 'No starter selected',
+          mode === 'battle' && enemy ? ` | Wild ${enemy.name} HP: ${enemy.hp}/${enemy.maxHp}` : '',
+        ),
+        mode !== 'battle' &&
+          React.createElement(
+            'div',
+            { className: 'map' },
+            world.flatMap((row, y) =>
+              row.map((tile, x) => {
+                const isPlayer = playerPos.x === x && playerPos.y === y;
+                return React.createElement('div', {
+                  key: `${x}-${y}`,
+                  className: `tile ${tile.type} ${isPlayer ? 'player' : ''}`,
+                });
+              }),
             ),
           ),
+        mode === 'battle' &&
+          enemy &&
+          React.createElement(
+            'div',
+            { className: 'battle' },
+            React.createElement('p', null, `Wild ${enemy.name} (${enemy.type})`),
+            React.createElement('p', null, 'Choose a move:'),
+            React.createElement(
+              'div',
+              { className: 'moves' },
+              starter.moves.map((move) =>
+                React.createElement(
+                  'button',
+                  { key: move.name, onClick: () => attack(move) },
+                  move.name,
+                ),
+              ),
+            ),
+          ),
+        mode === 'intro' &&
+          React.createElement(
+            'div',
+            { className: 'overlay' },
+            React.createElement('p', null, 'Choose your starter'),
+            React.createElement(
+              'div',
+              { className: 'starter-list' },
+              STARTERS.map((pick) =>
+                React.createElement(
+                  'button',
+                  { key: pick.key, onClick: () => chooseStarter(pick) },
+                  `${pick.name} (${pick.type})`,
+                ),
+              ),
+            ),
+          ),
+        mode === 'gameover' &&
+          React.createElement(
+            'div',
+            { className: 'overlay' },
+            React.createElement('p', null, 'You blacked out!'),
+            React.createElement('button', { onClick: restart }, 'Restart Adventure'),
+          ),
+      ),
+      React.createElement(
+        'div',
+        { className: 'controls' },
+        React.createElement(
+          'div',
+          { className: 'dpad' },
+          React.createElement('button', { onClick: () => tryMove(0, -1) }, '↑'),
+          React.createElement('button', { onClick: () => tryMove(-1, 0) }, '←'),
+          React.createElement('button', { onClick: () => tryMove(1, 0) }, '→'),
+          React.createElement('button', { onClick: () => tryMove(0, 1) }, '↓'),
         ),
         React.createElement(
-          'form',
-          { className: 'composer', onSubmit },
-          React.createElement('input', {
-            type: 'text',
-            value: input,
-            onChange: (event) => setInput(event.target.value),
-            placeholder: 'Ask NOVA anything…',
-            'aria-label': 'Ask the support agent',
-          }),
-          React.createElement('button', { type: 'submit' }, 'Send'),
+          'div',
+          { className: 'notes' },
+          React.createElement('p', null, 'Move with arrow keys or D-pad'),
+          React.createElement('p', null, 'Fight in turn-based mini-battles'),
+          React.createElement('button', { onClick: restart }, 'Reset'),
         ),
       ),
+    ),
+    React.createElement(
+      'div',
+      { className: 'log' },
+      log.map((entry, index) => React.createElement('p', { key: `${entry}-${index}` }, `> ${entry}`)),
     ),
   );
 }
 
-const rootElement = document.getElementById('root');
-createRoot(rootElement).render(React.createElement(App));
+createRoot(document.getElementById('root')).render(React.createElement(App));
