@@ -1,161 +1,165 @@
-import React, { useEffect, useMemo, useRef, useState } from 'https://esm.sh/react@18.2.0';
+import React from 'https://esm.sh/react@18.2.0';
 import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
 import * as THREE from 'https://esm.sh/three@0.160.0';
 import { animate, stagger } from 'https://cdn.jsdelivr.net/npm/motion@11.11.13/+esm';
 
-const AGENT_NAME = 'NOVA';
+const SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard';
+const NBA_LOGO = 'https://loodibee.com/wp-content/uploads/nba-logo-transparent.png';
+const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
 
-const cannedResponses = [
-  {
-    test: /(who|what).*you|name/i,
-    answer: `I'm ${AGENT_NAME}, your launch agent. I blend visual storytelling, voice guidance, and instant help right here in the intro.`,
-  },
-  {
-    test: /(react|three|motion|stack|tech)/i,
-    answer:
-      'This experience runs on React for UI orchestration, Three.js for cinematic 3D graphics, and motion.dev for high-impact animations.',
-  },
-  {
-    test: /(help|support|agent|ask)/i,
-    answer:
-      'You can ask me anything about this demo, how it works, or what to build next. Try: “Give me a product idea” or “How do I deploy this?”',
-  },
-  {
-    test: /(gemini|design|compare)/i,
-    answer:
-      'Let\'s just say this intro was designed to feel bold, futuristic, and unforgettable — a high-energy creative statement.',
-  },
-];
+const TEAM_LOGOS = {
+  ATL: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/atl.png', BOS: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/bos.png', BKN: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/bkn.png',
+  CHA: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/cha.png', CHI: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/chi.png', CLE: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/cle.png',
+  DAL: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/dal.png', DEN: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/den.png', DET: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/det.png',
+  GSW: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/gs.png', HOU: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/hou.png', IND: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/ind.png',
+  LAC: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/lac.png', LAL: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/lal.png', MEM: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/mem.png',
+  MIA: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/mia.png', MIL: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/mil.png', MIN: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/min.png',
+  NOP: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/no.png', NYK: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/ny.png', OKC: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/okc.png',
+  ORL: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/orl.png', PHI: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/phi.png', PHX: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/phx.png',
+  POR: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/por.png', SAC: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/sac.png', SAS: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/sa.png',
+  TOR: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/tor.png', UTA: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/utah.png', WAS: 'https://a.espncdn.com/i/teamlogos/nba/500/scoreboard/wsh.png',
+};
 
-function resolveAgentReply(input) {
-  const hit = cannedResponses.find((entry) => entry.test.test(input));
-  if (hit) return hit.answer;
+const statusLabel = { pre: 'Upcoming', in: 'LIVE', post: 'Final' };
 
-  const ideas = [
-    'Turn this into a landing page for your AI product with pricing, testimonials, and a live demo CTA.',
-    'Add voice commands so I can respond hands-free while the 3D scene reacts in real time.',
-    'Connect this chat box to a backend model endpoint and make me a fully autonomous support co-pilot.',
-  ];
+const fmtDate = (v) => new Date(v).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-  return `Great question. Here\'s a creative direction: ${ideas[Math.floor(Math.random() * ideas.length)]}`;
+const parseWinPct = (record) => {
+  const [w = '0', l = '0'] = (record || '').split('-');
+  const wins = Number(w) || 0;
+  const losses = Number(l) || 0;
+  return wins + losses ? wins / (wins + losses) : 0.5;
+};
+
+const stars = (pct) => '★'.repeat(Math.max(1, Math.min(5, Math.round(pct * 5)))) + '☆'.repeat(5 - Math.max(1, Math.min(5, Math.round(pct * 5))));
+
+const decodeJwt = (token) => {
+  try {
+    const payload = token.split('.')[1];
+    return JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return null;
+  }
+};
+
+function predictionForGame(game) {
+  const homePct = parseWinPct(game.home.record);
+  const awayPct = parseWinPct(game.away.record);
+  const homeProbRaw = Math.max(0.3, Math.min(0.77, 0.5 + (homePct - awayPct) + 0.04));
+  const homeProb = Math.round(homeProbRaw * 100);
+  const awayProb = 100 - homeProb;
+  const confidence = Math.round(Math.abs(homeProb - awayProb));
+  return {
+    homeProb,
+    awayProb,
+    pick: homeProb >= 55 ? `${game.home.short} ML` : awayProb >= 55 ? `${game.away.short} ML` : 'Wait for live line',
+    confidence,
+  };
 }
 
-function App() {
-  const canvasRef = useRef(null);
-  const heroRef = useRef(null);
-  const panelRef = useRef(null);
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState(() => [
-    {
-      role: 'agent',
-      text: `Welcome to the future. I'm ${AGENT_NAME}, your creative support agent. Ask me anything.`,
-    },
-  ]);
+function mapEvent(event) {
+  const comp = event.competitions?.[0];
+  const competitors = comp?.competitors || [];
+  const home = competitors.find((c) => c.homeAway === 'home');
+  const away = competitors.find((c) => c.homeAway === 'away');
 
-  const lastAgentMessage = useMemo(
-    () => [...messages].reverse().find((m) => m.role === 'agent')?.text || '',
-    [messages],
-  );
+  const teamObj = (entry) => {
+    const t = entry?.team || {};
+    const record = entry?.records?.[0]?.summary || '-';
+    const pct = parseWinPct(record);
+    return {
+      name: t.displayName || t.name,
+      short: t.abbreviation || t.shortDisplayName,
+      logo: TEAM_LOGOS[t.abbreviation] || t.logo,
+      score: entry?.score ?? '-',
+      record,
+      color: t.color || '1d4ed8',
+      altColor: t.alternateColor || '0ea5e9',
+      linescore: entry?.linescores?.map((x) => x.value).join(' · ') || '--',
+      strengthPct: Math.round(pct * 100),
+      strength: `${stars(pct)} (${Math.round(pct * 100)}%)`,
+    };
+  };
 
-  useEffect(() => {
-    const heroNodes = heroRef.current?.querySelectorAll('.reveal') ?? [];
-    if (heroNodes.length > 0) {
-      animate(
-        heroNodes,
-        { opacity: [0, 1], y: [36, 0], filter: ['blur(10px)', 'blur(0px)'] },
-        { delay: stagger(0.12), duration: 0.9, easing: 'ease-out' },
-      );
-    }
+  const leaders = (comp?.leaders || []).flatMap((l) => l.leaders || []).slice(0, 10).map((l) => ({
+    name: l.athlete?.displayName || 'Unknown',
+    headshot: l.athlete?.headshot?.href || '',
+    stat: `${l.displayValue || ''} ${l.shortDisplayName || ''}`.trim(),
+    team: l.team?.abbreviation || '',
+  }));
 
-    if (panelRef.current) {
-      animate(panelRef.current, { opacity: [0, 1], x: [30, 0] }, { duration: 0.9, delay: 0.45 });
-    }
-  }, []);
+  const insights = [
+    `"${(away?.team?.abbreviation || 'AWAY')} must control pace to neutralize transition risk."`,
+    `"${(home?.team?.abbreviation || 'HOME')} has home-court leverage in late-clock sets."`,
+    `"Track injury updates 30-45 mins pre-tip for bet sizing."`,
+  ];
 
-  useEffect(() => {
-    if (!canvasRef.current) return;
+  const game = {
+    id: event.id,
+    name: event.name,
+    date: event.date,
+    state: event.status?.type?.state || 'pre',
+    statusText: event.status?.type?.detail || event.status?.type?.description || 'Scheduled',
+    venue: comp?.venue?.fullName || 'NBA Arena',
+    broadcast: comp?.broadcasts?.[0]?.names?.join(', ') || 'National Feed',
+    odds: comp?.odds?.[0]?.details || 'Odds feed pending',
+    overUnder: comp?.odds?.[0]?.overUnder || '--',
+    home: teamObj(home),
+    away: teamObj(away),
+    leaders,
+    quotes: insights,
+  };
 
+  return { ...game, prediction: predictionForGame(game) };
+}
+
+function ThreeBackdrop() {
+  const canvasRef = React.useRef(null);
+  React.useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return undefined;
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2('#06070b', 0.055);
-
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(0, 0, 7);
-
+    const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 7;
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
 
-    const ambient = new THREE.AmbientLight('#8ab4ff', 0.75);
-    const key = new THREE.PointLight('#9f7bff', 2.2, 100);
-    key.position.set(3, 2, 5);
-    const fill = new THREE.PointLight('#24d6b5', 1.8, 100);
-    fill.position.set(-4, -1, 4);
-    scene.add(ambient, key, fill);
+    scene.add(new THREE.AmbientLight('#7c9cff', 0.6));
+    const light = new THREE.PointLight('#54d0ff', 1.5, 100);
+    light.position.set(3, 2, 5);
+    scene.add(light);
 
-    const coreGeometry = new THREE.IcosahedronGeometry(1.35, 2);
-    const coreMaterial = new THREE.MeshPhysicalMaterial({
-      color: '#85a7ff',
-      metalness: 0.25,
-      roughness: 0.1,
-      transmission: 0.25,
-      clearcoat: 0.5,
-      emissive: '#3452ff',
-      emissiveIntensity: 0.35,
-    });
-    const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
-    scene.add(coreMesh);
-
-    const ringGroup = new THREE.Group();
-    for (let i = 0; i < 3; i += 1) {
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(2 + i * 0.45, 0.03 + i * 0.01, 16, 180),
-        new THREE.MeshStandardMaterial({
-          color: ['#c8d6ff', '#8be8ff', '#80ffd8'][i],
-          emissive: ['#5b79ff', '#2ab8ff', '#20cd9a'][i],
-          emissiveIntensity: 0.65,
-          metalness: 0.6,
-          roughness: 0.25,
-        }),
-      );
-      ring.rotation.set(Math.random(), Math.random(), Math.random());
-      ringGroup.add(ring);
-    }
-    scene.add(ringGroup);
+    const core = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(1.2, 2),
+      new THREE.MeshStandardMaterial({ color: '#3b82f6', emissive: '#1d4ed8', emissiveIntensity: 0.35, metalness: 0.45, roughness: 0.28 }),
+    );
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(2.2, 0.03, 16, 160), new THREE.MeshBasicMaterial({ color: '#22d3ee' }));
+    ring.rotation.x = 0.9;
+    scene.add(core, ring);
 
     const starsGeo = new THREE.BufferGeometry();
-    const starCount = 1800;
-    const positionArray = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount * 3; i += 3) {
-      positionArray[i] = (Math.random() - 0.5) * 80;
-      positionArray[i + 1] = (Math.random() - 0.5) * 80;
-      positionArray[i + 2] = (Math.random() - 0.5) * 80;
+    const count = 1200;
+    const arr = new Float32Array(count * 3);
+    for (let i = 0; i < arr.length; i += 3) {
+      arr[i] = (Math.random() - 0.5) * 70;
+      arr[i + 1] = (Math.random() - 0.5) * 70;
+      arr[i + 2] = (Math.random() - 0.5) * 70;
     }
-    starsGeo.setAttribute('position', new THREE.BufferAttribute(positionArray, 3));
-    const stars = new THREE.Points(
-      starsGeo,
-      new THREE.PointsMaterial({ color: '#9ab7ff', size: 0.04, transparent: true, opacity: 0.8 }),
-    );
-    scene.add(stars);
+    starsGeo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    const starsCloud = new THREE.Points(starsGeo, new THREE.PointsMaterial({ color: '#93c5fd', size: 0.04 }));
+    scene.add(starsCloud);
 
-    let rafId;
     const clock = new THREE.Clock();
-
-    const animateScene = () => {
+    let raf;
+    const tick = () => {
       const t = clock.getElapsedTime();
-      coreMesh.rotation.x = t * 0.35;
-      coreMesh.rotation.y = t * 0.5;
-      coreMesh.position.y = Math.sin(t * 1.2) * 0.2;
-
-      ringGroup.rotation.x = t * 0.18;
-      ringGroup.rotation.y = -t * 0.24;
-      ringGroup.rotation.z = Math.sin(t * 0.8) * 0.25;
-
-      stars.rotation.y = t * 0.018;
-      stars.rotation.x = Math.sin(t * 0.1) * 0.08;
-
+      core.rotation.x = t * 0.34;
+      core.rotation.y = t * 0.43;
+      ring.rotation.z = t * 0.2;
+      starsCloud.rotation.y = t * 0.03;
       renderer.render(scene, camera);
-      rafId = requestAnimationFrame(animateScene);
+      raf = requestAnimationFrame(tick);
     };
 
     const onResize = () => {
@@ -163,95 +167,248 @@ function App() {
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     };
-
     window.addEventListener('resize', onResize);
-    animateScene();
+    tick();
 
     return () => {
       window.removeEventListener('resize', onResize);
-      cancelAnimationFrame(rafId);
+      cancelAnimationFrame(raf);
       renderer.dispose();
-      coreGeometry.dispose();
-      coreMaterial.dispose();
       starsGeo.dispose();
     };
   }, []);
+  return React.createElement('canvas', { className: 'three-bg', ref: canvasRef, 'aria-hidden': 'true' });
+}
 
-  useEffect(() => {
-    if (!lastAgentMessage || !('speechSynthesis' in window)) return;
-
-    const utterance = new SpeechSynthesisUtterance(lastAgentMessage);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.volume = 0.95;
-
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find((v) => /en-US|Google US English|Samantha|Daniel/i.test(v.name));
-    if (preferred) utterance.voice = preferred;
-
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }, [lastAgentMessage]);
-
-  const onSubmit = (event) => {
-    event.preventDefault();
-    const value = input.trim();
-    if (!value) return;
-
-    const reply = resolveAgentReply(value);
-    setMessages((prev) => [...prev, { role: 'user', text: value }, { role: 'agent', text: reply }]);
-    setInput('');
-  };
-
-  return React.createElement(
-    React.Fragment,
-    null,
-    React.createElement('canvas', { ref: canvasRef, className: 'bg-canvas', 'aria-hidden': 'true' }),
-    React.createElement(
-      'main',
-      { className: 'app-shell' },
-      React.createElement(
-        'section',
-        { className: 'hero', ref: heroRef },
-        React.createElement('p', { className: 'kicker reveal' }, 'AGENTIC IMMERSIVE INTRO'),
-        React.createElement('h1', { className: 'headline reveal' }, 'Hello World, Reimagined.'),
-        React.createElement(
-          'p',
-          { className: 'subheadline reveal' },
-          'An insane cinematic opening powered by React + Three.js + motion.dev, with a voice-enabled AI support agent built in.',
-        ),
+function TeamPanel({ team, side, gameState }) {
+  return React.createElement('section', { className: `team-panel ${side}`, style: { '--c1': `#${team.color}`, '--c2': `#${team.altColor}` } },
+    React.createElement('div', { className: 'team-header' },
+      React.createElement('img', { src: team.logo, alt: `${team.name} logo` }),
+      React.createElement('div', null,
+        React.createElement('p', { className: 'side-tag' }, side.toUpperCase()),
+        React.createElement('h3', null, team.name),
+        React.createElement('p', { className: 'tiny' }, `Record: ${team.record}`),
       ),
-      React.createElement(
-        'aside',
-        { className: 'agent-panel', ref: panelRef },
-        React.createElement('h2', null, `${AGENT_NAME} // Live Support Agent`),
-        React.createElement(
-          'div',
-          { className: 'messages' },
-          messages.map((message, index) =>
-            React.createElement(
-              'div',
-              { key: `${message.role}-${index}`, className: `message ${message.role}` },
-              message.text,
-            ),
-          ),
-        ),
-        React.createElement(
-          'form',
-          { className: 'composer', onSubmit },
-          React.createElement('input', {
-            type: 'text',
-            value: input,
-            onChange: (event) => setInput(event.target.value),
-            placeholder: 'Ask NOVA anything…',
-            'aria-label': 'Ask the support agent',
-          }),
-          React.createElement('button', { type: 'submit' }, 'Send'),
-        ),
+    ),
+    React.createElement('p', { className: 'strength' }, `Strength: ${team.strength}`),
+    React.createElement('div', { className: `score-box ${gameState === 'in' ? 'live' : ''}` },
+      React.createElement('span', null, gameState === 'post' ? 'Final Score' : 'Current Score'),
+      React.createElement('strong', null, team.score),
+    ),
+    React.createElement('p', { className: 'tiny' }, `Quarter splits: ${team.linescore}`),
+  );
+}
+
+function GameCard({ game }) {
+  return React.createElement('article', { className: 'game-card reveal' },
+    React.createElement('div', { className: 'card-top' },
+      React.createElement('div', null,
+        React.createElement('p', { className: 'status' }, game.statusText),
+        React.createElement('h2', null, game.name),
+        React.createElement('p', { className: 'tiny' }, `${fmtDate(game.date)} · ${game.venue} · ${game.broadcast}`),
+      ),
+      React.createElement('div', { className: `status-badge ${game.state}` }, statusLabel[game.state] || 'Status'),
+    ),
+    React.createElement('div', { className: 'teams-grid' },
+      React.createElement(TeamPanel, { team: game.away, side: 'away', gameState: game.state }),
+      React.createElement(TeamPanel, { team: game.home, side: 'home', gameState: game.state }),
+    ),
+    React.createElement('section', { className: 'bet-frame' },
+      React.createElement('h4', null, 'Clear Prediction & Bets'),
+      React.createElement('div', { className: 'bet-grid' },
+        React.createElement('p', null, `${game.home.short} win: ${game.prediction.homeProb}%`),
+        React.createElement('p', null, `${game.away.short} win: ${game.prediction.awayProb}%`),
+        React.createElement('p', null, `Recommended pick: ${game.prediction.pick}`),
+        React.createElement('p', null, `Confidence: ${game.prediction.confidence}/100`),
+      ),
+    ),
+    React.createElement('div', { className: 'intel-grid' },
+      React.createElement('section', { className: 'intel' },
+        React.createElement('h4', null, 'Market'),
+        React.createElement('p', null, `Odds line: ${game.odds}`),
+        React.createElement('p', null, `Over/Under: ${game.overUnder}`),
+      ),
+      React.createElement('section', { className: 'intel' },
+        React.createElement('h4', null, 'Pro Quote'),
+        game.quotes.map((q) => React.createElement('p', { key: q }, q)),
       ),
     ),
   );
 }
 
-const rootElement = document.getElementById('root');
-createRoot(rootElement).render(React.createElement(App));
+function AccountPanel({ user, setUser }) {
+  const googleRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!window.google || !googleRef.current || GOOGLE_CLIENT_ID.startsWith('YOUR_')) return;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (response) => {
+        const payload = decodeJwt(response.credential);
+        if (!payload) return;
+        setUser({ name: payload.name, email: payload.email, picture: payload.picture });
+      },
+    });
+    window.google.accounts.id.renderButton(googleRef.current, { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'continue_with' });
+  }, [setUser]);
+
+  return React.createElement('section', { className: 'side-card account reveal' },
+    React.createElement('h3', null, 'Your Account'),
+    user
+      ? React.createElement('div', { className: 'user-box' },
+        user.picture ? React.createElement('img', { src: user.picture, alt: user.name }) : null,
+        React.createElement('div', null,
+          React.createElement('strong', null, user.name),
+          React.createElement('p', null, user.email),
+        ),
+      )
+      : React.createElement('p', null, 'Login to unlock premium picks, alerts, and bet tracking.'),
+    React.createElement('div', { ref: googleRef }),
+    GOOGLE_CLIENT_ID.startsWith('YOUR_')
+      ? React.createElement('p', { className: 'tiny' }, 'Set a real Google OAuth client ID in `GOOGLE_CLIENT_ID` to enable live Gmail auth.')
+      : null,
+  );
+}
+
+function RightPanel({ trendingPlayers, trendingTeams, user, setUser }) {
+  return React.createElement('aside', { className: 'right-panel' },
+    React.createElement(AccountPanel, { user, setUser }),
+    React.createElement('section', { className: 'side-card reveal' },
+      React.createElement('h3', null, 'Trending Players'),
+      trendingPlayers.length
+        ? trendingPlayers.map((p, i) => React.createElement('p', { key: `${p.name}-${i}` }, `🔥 ${p.name} (${p.team}) · ${p.stat}`))
+        : React.createElement('p', null, 'Waiting for live leaders feed...'),
+    ),
+    React.createElement('section', { className: 'side-card reveal' },
+      React.createElement('h3', null, 'Trending Team Form'),
+      trendingTeams.length
+        ? trendingTeams.map((t, i) => React.createElement('p', { key: `${t.short}-${i}` }, `📈 ${t.short} · ${t.record} · ${t.strength}`))
+        : React.createElement('p', null, 'Waiting for team form feed...'),
+    ),
+  );
+}
+
+function LiveTicker({ games }) {
+  const items = games.map((g) => `${g.away.short} ${g.away.score} - ${g.home.score} ${g.home.short} · ${statusLabel[g.state] || g.state}`);
+  return React.createElement('div', { className: 'ticker-wrap reveal' },
+    React.createElement('div', { className: 'ticker-track' },
+      (items.length ? [...items, ...items] : ['Live scoreboard loading...']).map((item, idx) =>
+        React.createElement('span', { key: `${item}-${idx}` }, `🏀 ${item}`),
+      ),
+    ),
+  );
+}
+
+function Filters({ selected, setSelected }) {
+  const options = [
+    { key: 'all', label: 'All Games' },
+    { key: 'in', label: 'Live' },
+    { key: 'pre', label: 'Upcoming' },
+    { key: 'post', label: 'Final' },
+  ];
+
+  return React.createElement('div', { className: 'filters reveal' },
+    options.map((opt) => React.createElement('button', {
+      key: opt.key,
+      type: 'button',
+      onClick: () => setSelected(opt.key),
+      className: `filter-btn ${selected === opt.key ? 'active' : ''}`,
+    }, opt.label)),
+  );
+}
+
+function App() {
+  const [games, setGames] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+  const [selectedFilter, setSelectedFilter] = React.useState('all');
+  const [user, setUser] = React.useState(null);
+
+  React.useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+    return () => {
+      document.head.removeChild(script);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const res = await fetch(SCOREBOARD_URL);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!mounted) return;
+        setGames((data.events || []).map(mapEvent));
+        setError('');
+      } catch (err) {
+        if (!mounted) return;
+        setError(`Live feed unavailable in this environment (${err.message}).`);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    const id = setInterval(load, 60000);
+    return () => { mounted = false; clearInterval(id); };
+  }, []);
+
+  React.useEffect(() => {
+    const nodes = document.querySelectorAll('.reveal');
+    if (!nodes.length) return;
+    animate(nodes, { opacity: [0, 1], y: [16, 0] }, { delay: stagger(0.04), duration: 0.55, easing: 'ease-out' });
+  }, [games, selectedFilter]);
+
+  const filteredGames = games.filter((g) => selectedFilter === 'all' || g.state === selectedFilter);
+  const focus = filteredGames.find((g) => g.state === 'in') || filteredGames[0] || games[0];
+  const trendingPlayers = games.flatMap((g) => g.leaders).slice(0, 10);
+  const trendingTeams = games.flatMap((g) => [g.home, g.away]).sort((a, b) => b.strengthPct - a.strengthPct).slice(0, 8);
+
+  return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(ThreeBackdrop),
+    React.createElement('main', { className: 'app' },
+      React.createElement('header', { className: 'hero reveal' },
+        React.createElement('div', { className: 'hero-brand' },
+          React.createElement('img', { src: NBA_LOGO, alt: 'NBA logo', className: 'nba-logo' }),
+          React.createElement('p', { className: 'eyebrow' }, 'NBA PRIME ODDS · LIVE COMMAND CENTER'),
+        ),
+        React.createElement('h1', null, 'Supercharged NBA Intelligence — Live, Stylish, Functional'),
+        React.createElement('p', { className: 'tiny' }, `Auto-refreshing every 60s · Last refresh ${new Date().toLocaleTimeString()}`),
+        React.createElement('div', { className: 'hero-stats' },
+          React.createElement('div', { className: 'hero-stat' }, React.createElement('strong', null, `${games.filter((g) => g.state === 'in').length}`), React.createElement('span', null, 'Live Games')),
+          React.createElement('div', { className: 'hero-stat' }, React.createElement('strong', null, `${games.filter((g) => g.state === 'post').length}`), React.createElement('span', null, 'Final Games')),
+          React.createElement('div', { className: 'hero-stat' }, React.createElement('strong', null, `${games.length}`), React.createElement('span', null, 'Total Games')),
+        ),
+        focus && React.createElement('div', { className: 'focus' },
+          React.createElement('strong', null, 'CURRENT FOCUS GAME'),
+          React.createElement('span', null, `${focus.away.short} ${focus.away.score} - ${focus.home.score} ${focus.home.short}`),
+          React.createElement('span', null, `${statusLabel[focus.state] || focus.state} · ${focus.statusText}`),
+          React.createElement('span', null, `Suggested bet: ${focus.prediction.pick}`),
+        ),
+        error && React.createElement('p', { className: 'error' }, error),
+      ),
+      React.createElement(LiveTicker, { games: filteredGames.length ? filteredGames : games }),
+      React.createElement(Filters, { selected: selectedFilter, setSelected: setSelectedFilter }),
+      React.createElement('div', { className: 'layout' },
+        React.createElement('section', { className: 'content' },
+          loading
+            ? React.createElement('p', { className: 'loading' }, 'Loading live NBA scoreboard...')
+            : React.createElement('section', { className: 'cards' },
+              (filteredGames.length ? filteredGames : selectedFilter !== 'all' ? [] : games).length
+                ? (filteredGames.length ? filteredGames : selectedFilter !== 'all' ? [] : games).map((g) => React.createElement(GameCard, { key: g.id, game: g }))
+                : React.createElement('p', { className: 'loading' }, `No ${statusLabel[selectedFilter]?.toLowerCase() || 'matching'} games right now.`),
+            ),
+        ),
+        React.createElement(RightPanel, { trendingPlayers, trendingTeams, user, setUser }),
+      ),
+    ),
+  );
+}
+
+createRoot(document.getElementById('root')).render(React.createElement(App));
